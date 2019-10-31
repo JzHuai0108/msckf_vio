@@ -101,6 +101,7 @@ bool ImageProcessor::loadParameters() {
   t_cam1_imu = -R_imu_cam1.t() * t_imu_cam1;
 
   // Processor parameters
+  nh.param<bool>("monocular", processor_config.monocular, false);
   nh.param<int>("grid_row", processor_config.grid_row, 4);
   nh.param<int>("grid_col", processor_config.grid_col, 4);
   nh.param<int>("grid_min_feature_num",
@@ -148,6 +149,8 @@ bool ImageProcessor::loadParameters() {
   cout << R_imu_cam0 << endl;
   cout << t_imu_cam0.t() << endl;
 
+  ROS_INFO("monocular: %d",
+      processor_config.monocular);
   ROS_INFO("grid_row: %d",
       processor_config.grid_row);
   ROS_INFO("grid_col: %d",
@@ -229,11 +232,7 @@ void ImageProcessor::stereoCallback(
     //    (ros::Time::now()-start_time).toSec());
     is_first_img = false;
 
-    // Draw results.
-    start_time = ros::Time::now();
-    drawFeaturesStereo();
-    //ROS_INFO("Draw features: %f",
-    //    (ros::Time::now()-start_time).toSec());
+  
   } else {
     // Track the feature in the previous image.
     ros::Time start_time = ros::Time::now();
@@ -253,12 +252,18 @@ void ImageProcessor::stereoCallback(
     //ROS_INFO("Prune grid features: %f",
     //    (ros::Time::now()-start_time).toSec());
 
-    // Draw results.
-    start_time = ros::Time::now();
-    drawFeaturesStereo();
-    //ROS_INFO("Draw features: %f",
-    //    (ros::Time::now()-start_time).toSec());
+  
   }
+
+  // Draw results.
+  ros::Time start_time_draw = ros::Time::now();
+  if (processor_config.monocular) {
+    drawFeaturesMono();
+  } else {
+    drawFeaturesStereo();
+  }
+  //ROS_INFO("Draw features: %f",
+  //    (ros::Time::now()-start_time_draw).toSec());
 
   //ros::Time start_time = ros::Time::now();
   //updateFeatureLifetime();
@@ -301,13 +306,14 @@ void ImageProcessor::createImagePyramids() {
       Size(processor_config.patch_size, processor_config.patch_size),
       processor_config.pyramid_levels, true, BORDER_REFLECT_101,
       BORDER_CONSTANT, false);
-
-  const Mat& curr_cam1_img = cam1_curr_img_ptr->image;
-  buildOpticalFlowPyramid(
-      curr_cam1_img, curr_cam1_pyramid_,
-      Size(processor_config.patch_size, processor_config.patch_size),
-      processor_config.pyramid_levels, true, BORDER_REFLECT_101,
-      BORDER_CONSTANT, false);
+  if (!processor_config.monocular) {
+    const Mat& curr_cam1_img = cam1_curr_img_ptr->image;
+    buildOpticalFlowPyramid(
+        curr_cam1_img, curr_cam1_pyramid_,
+        Size(processor_config.patch_size, processor_config.patch_size),
+        processor_config.pyramid_levels, true, BORDER_REFLECT_101,
+        BORDER_CONSTANT, false);
+  }
 }
 
 void ImageProcessor::initializeFirstFrame() {
@@ -320,46 +326,65 @@ void ImageProcessor::initializeFirstFrame() {
   vector<KeyPoint> new_features(0);
   detector_ptr->detect(img, new_features);
 
-  // Find the stereo matched points for the newly
-  // detected features.
-  vector<cv::Point2f> cam0_points(new_features.size());
-  for (int i = 0; i < new_features.size(); ++i)
-    cam0_points[i] = new_features[i].pt;
-
-  vector<cv::Point2f> cam1_points(0);
-  vector<unsigned char> inlier_markers(0);
-  stereoMatch(cam0_points, cam1_points, inlier_markers);
-
-  vector<cv::Point2f> cam0_inliers(0);
-  vector<cv::Point2f> cam1_inliers(0);
-  vector<float> response_inliers(0);
-  for (int i = 0; i < inlier_markers.size(); ++i) {
-    if (inlier_markers[i] == 0) continue;
-    cam0_inliers.push_back(cam0_points[i]);
-    cam1_inliers.push_back(cam1_points[i]);
-    response_inliers.push_back(new_features[i].response);
-  }
-
-  // Group the features into grids
   GridFeatures grid_new_features;
-  for (int code = 0; code <
-      processor_config.grid_row*processor_config.grid_col; ++code)
-      grid_new_features[code] = vector<FeatureMetaData>(0);
+  if (processor_config.monocular) {  
+    // Group the features into grids
+    for (int code = 0; code <
+        processor_config.grid_row*processor_config.grid_col; ++code)
+        grid_new_features[code] = vector<FeatureMetaData>(0);
+    for (int i = 0; i < new_features.size(); ++i) {
+      const cv::Point2f& cam0_point = new_features[i].pt;
+      const float& response = new_features[i].response;
 
-  for (int i = 0; i < cam0_inliers.size(); ++i) {
-    const cv::Point2f& cam0_point = cam0_inliers[i];
-    const cv::Point2f& cam1_point = cam1_inliers[i];
-    const float& response = response_inliers[i];
+      int row = static_cast<int>(cam0_point.y / grid_height);
+      int col = static_cast<int>(cam0_point.x / grid_width);
+      int code = row*processor_config.grid_col + col;
 
-    int row = static_cast<int>(cam0_point.y / grid_height);
-    int col = static_cast<int>(cam0_point.x / grid_width);
-    int code = row*processor_config.grid_col + col;
+      FeatureMetaData new_feature;
+      new_feature.response = response;
+      new_feature.cam0_point = cam0_point;
+      grid_new_features[code].push_back(new_feature);
+    }
+  } else {
+    // Find the stereo matched points for the newly
+    // detected features.
+    vector<cv::Point2f> cam0_points(new_features.size());
+    for (int i = 0; i < new_features.size(); ++i)
+      cam0_points[i] = new_features[i].pt;
+    vector<cv::Point2f> cam1_points(0);
+    vector<unsigned char> inlier_markers(0);
+    stereoMatch(cam0_points, cam1_points, inlier_markers);
 
-    FeatureMetaData new_feature;
-    new_feature.response = response;
-    new_feature.cam0_point = cam0_point;
-    new_feature.cam1_point = cam1_point;
-    grid_new_features[code].push_back(new_feature);
+    vector<cv::Point2f> cam0_inliers(0);
+    vector<cv::Point2f> cam1_inliers(0);
+    vector<float> response_inliers(0);
+    for (int i = 0; i < inlier_markers.size(); ++i) {
+      if (inlier_markers[i] == 0) continue;
+      cam0_inliers.push_back(cam0_points[i]);
+      cam1_inliers.push_back(cam1_points[i]);
+      response_inliers.push_back(new_features[i].response);
+    }
+
+    // Group the features into grids
+    for (int code = 0; code <
+        processor_config.grid_row*processor_config.grid_col; ++code)
+        grid_new_features[code] = vector<FeatureMetaData>(0);
+
+    for (int i = 0; i < cam0_inliers.size(); ++i) {
+      const cv::Point2f& cam0_point = cam0_inliers[i];
+      const cv::Point2f& cam1_point = cam1_inliers[i];
+      const float& response = response_inliers[i];
+
+      int row = static_cast<int>(cam0_point.y / grid_height);
+      int col = static_cast<int>(cam0_point.x / grid_width);
+      int code = row*processor_config.grid_col + col;
+
+      FeatureMetaData new_feature;
+      new_feature.response = response;
+      new_feature.cam0_point = cam0_point;
+      new_feature.cam1_point = cam1_point;
+      grid_new_features[code].push_back(new_feature);
+    }
   }
 
   // Sort the new features in each grid based on its response.
@@ -499,86 +524,116 @@ void ImageProcessor::trackFeatures() {
   // Number of features left after tracking.
   after_tracking = curr_tracked_cam0_points.size();
 
+  if (processor_config.monocular) {   
+    // Number of features left after stereo matching.
+    after_matching = after_tracking;
 
-  // Outlier removal involves three steps, which forms a close
-  // loop between the previous and current frames of cam0 (left)
-  // and cam1 (right). Assuming the stereo matching between the
-  // previous cam0 and cam1 images are correct, the three steps are:
-  //
-  // prev frames cam0 ----------> cam1
-  //              |                |
-  //              |ransac          |ransac
-  //              |   stereo match |
-  // curr frames cam0 ----------> cam1
-  //
-  // 1) Stereo matching between current images of cam0 and cam1.
-  // 2) RANSAC between previous and current images of cam0.
-  // 3) RANSAC between previous and current images of cam1.
-  //
-  // For Step 3, tracking between the images is no longer needed.
-  // The stereo matching results are directly used in the RANSAC.
+    // RANSAC on temporal image pairs of cam0.
+    vector<int> cam0_ransac_inliers(0);
+    twoPointRansac(prev_tracked_cam0_points, curr_tracked_cam0_points,
+        cam0_R_p_c, cam0_intrinsics, cam0_distortion_model,
+        cam0_distortion_coeffs, processor_config.ransac_threshold,
+        0.99, cam0_ransac_inliers);
 
-  // Step 1: stereo matching.
-  vector<Point2f> curr_cam1_points(0);
-  vector<unsigned char> match_inliers(0);
-  stereoMatch(curr_tracked_cam0_points, curr_cam1_points, match_inliers);
+    // Number of features after ransac.
+    after_ransac = 0;
 
-  vector<FeatureIDType> prev_matched_ids(0);
-  vector<int> prev_matched_lifetime(0);
-  vector<Point2f> prev_matched_cam0_points(0);
-  vector<Point2f> prev_matched_cam1_points(0);
-  vector<Point2f> curr_matched_cam0_points(0);
-  vector<Point2f> curr_matched_cam1_points(0);
+    for (int i = 0; i < cam0_ransac_inliers.size(); ++i) {
+      if (cam0_ransac_inliers[i] == 0) continue;
+      int row = static_cast<int>(
+          curr_tracked_cam0_points[i].y / grid_height);
+      int col = static_cast<int>(
+          curr_tracked_cam0_points[i].x / grid_width);
+      int code = row*processor_config.grid_col + col;
+      (*curr_features_ptr)[code].push_back(FeatureMetaData());
 
-  removeUnmarkedElements(
-      prev_tracked_ids, match_inliers, prev_matched_ids);
-  removeUnmarkedElements(
-      prev_tracked_lifetime, match_inliers, prev_matched_lifetime);
-  removeUnmarkedElements(
-      prev_tracked_cam0_points, match_inliers, prev_matched_cam0_points);
-  removeUnmarkedElements(
-      prev_tracked_cam1_points, match_inliers, prev_matched_cam1_points);
-  removeUnmarkedElements(
-      curr_tracked_cam0_points, match_inliers, curr_matched_cam0_points);
-  removeUnmarkedElements(
-      curr_cam1_points, match_inliers, curr_matched_cam1_points);
+      FeatureMetaData& grid_new_feature = (*curr_features_ptr)[code].back();
+      grid_new_feature.id = prev_tracked_ids[i];
+      grid_new_feature.lifetime = ++prev_tracked_lifetime[i];
+      grid_new_feature.cam0_point = curr_tracked_cam0_points[i];
+      ++after_ransac;
+    }
+  } else {
+    // Outlier removal involves three steps, which forms a close
+    // loop between the previous and current frames of cam0 (left)
+    // and cam1 (right). Assuming the stereo matching between the
+    // previous cam0 and cam1 images are correct, the three steps are:
+    //
+    // prev frames cam0 ----------> cam1
+    //              |                |
+    //              |ransac          |ransac
+    //              |   stereo match |
+    // curr frames cam0 ----------> cam1
+    //
+    // 1) Stereo matching between current images of cam0 and cam1.
+    // 2) RANSAC between previous and current images of cam0.
+    // 3) RANSAC between previous and current images of cam1.
+    //
+    // For Step 3, tracking between the images is no longer needed.
+    // The stereo matching results are directly used in the RANSAC.
 
-  // Number of features left after stereo matching.
-  after_matching = curr_matched_cam0_points.size();
+    // Step 1: stereo matching.
+    vector<Point2f> curr_cam1_points(0);
+    vector<unsigned char> match_inliers(0);
+    stereoMatch(curr_tracked_cam0_points, curr_cam1_points, match_inliers);
 
-  // Step 2 and 3: RANSAC on temporal image pairs of cam0 and cam1.
-  vector<int> cam0_ransac_inliers(0);
-  twoPointRansac(prev_matched_cam0_points, curr_matched_cam0_points,
-      cam0_R_p_c, cam0_intrinsics, cam0_distortion_model,
-      cam0_distortion_coeffs, processor_config.ransac_threshold,
-      0.99, cam0_ransac_inliers);
+    vector<FeatureIDType> prev_matched_ids(0);
+    vector<int> prev_matched_lifetime(0);
+    vector<Point2f> prev_matched_cam0_points(0);
+    vector<Point2f> prev_matched_cam1_points(0);
+    vector<Point2f> curr_matched_cam0_points(0);
+    vector<Point2f> curr_matched_cam1_points(0);
 
-  vector<int> cam1_ransac_inliers(0);
-  twoPointRansac(prev_matched_cam1_points, curr_matched_cam1_points,
-      cam1_R_p_c, cam1_intrinsics, cam1_distortion_model,
-      cam1_distortion_coeffs, processor_config.ransac_threshold,
-      0.99, cam1_ransac_inliers);
+    removeUnmarkedElements(
+        prev_tracked_ids, match_inliers, prev_matched_ids);
+    removeUnmarkedElements(
+        prev_tracked_lifetime, match_inliers, prev_matched_lifetime);
+    removeUnmarkedElements(
+        prev_tracked_cam0_points, match_inliers, prev_matched_cam0_points);
+    removeUnmarkedElements(
+        prev_tracked_cam1_points, match_inliers, prev_matched_cam1_points);
+    removeUnmarkedElements(
+        curr_tracked_cam0_points, match_inliers, curr_matched_cam0_points);
+    removeUnmarkedElements(
+        curr_cam1_points, match_inliers, curr_matched_cam1_points);
 
-  // Number of features after ransac.
-  after_ransac = 0;
+    // Number of features left after stereo matching.
+    after_matching = curr_matched_cam0_points.size();
 
-  for (int i = 0; i < cam0_ransac_inliers.size(); ++i) {
-    if (cam0_ransac_inliers[i] == 0 ||
-        cam1_ransac_inliers[i] == 0) continue;
-    int row = static_cast<int>(
-        curr_matched_cam0_points[i].y / grid_height);
-    int col = static_cast<int>(
-        curr_matched_cam0_points[i].x / grid_width);
-    int code = row*processor_config.grid_col + col;
-    (*curr_features_ptr)[code].push_back(FeatureMetaData());
+    // Step 2 and 3: RANSAC on temporal image pairs of cam0 and cam1.
+    vector<int> cam0_ransac_inliers(0);
+    twoPointRansac(prev_matched_cam0_points, curr_matched_cam0_points,
+        cam0_R_p_c, cam0_intrinsics, cam0_distortion_model,
+        cam0_distortion_coeffs, processor_config.ransac_threshold,
+        0.99, cam0_ransac_inliers);
 
-    FeatureMetaData& grid_new_feature = (*curr_features_ptr)[code].back();
-    grid_new_feature.id = prev_matched_ids[i];
-    grid_new_feature.lifetime = ++prev_matched_lifetime[i];
-    grid_new_feature.cam0_point = curr_matched_cam0_points[i];
-    grid_new_feature.cam1_point = curr_matched_cam1_points[i];
+    vector<int> cam1_ransac_inliers(0);
+    twoPointRansac(prev_matched_cam1_points, curr_matched_cam1_points,
+        cam1_R_p_c, cam1_intrinsics, cam1_distortion_model,
+        cam1_distortion_coeffs, processor_config.ransac_threshold,
+        0.99, cam1_ransac_inliers);
+    
+    // Number of features after ransac.
+    after_ransac = 0;
 
-    ++after_ransac;
+    for (int i = 0; i < cam0_ransac_inliers.size(); ++i) {
+      if (cam0_ransac_inliers[i] == 0 ||
+          cam1_ransac_inliers[i] == 0) continue;
+      int row = static_cast<int>(
+          curr_matched_cam0_points[i].y / grid_height);
+      int col = static_cast<int>(
+          curr_matched_cam0_points[i].x / grid_width);
+      int code = row*processor_config.grid_col + col;
+      (*curr_features_ptr)[code].push_back(FeatureMetaData());
+
+      FeatureMetaData& grid_new_feature = (*curr_features_ptr)[code].back();
+      grid_new_feature.id = prev_matched_ids[i];
+      grid_new_feature.lifetime = ++prev_matched_lifetime[i];
+      grid_new_feature.cam0_point = curr_matched_cam0_points[i];
+      grid_new_feature.cam1_point = curr_matched_cam1_points[i];
+
+      ++after_ransac;
+    }
   }
 
   // Compute the tracking rate.
@@ -747,55 +802,75 @@ void ImageProcessor::addNewFeatures() {
   }
 
   int detected_new_features = new_features.size();
-
-  // Find the stereo matched points for the newly
-  // detected features.
-  vector<cv::Point2f> cam0_points(new_features.size());
-  for (int i = 0; i < new_features.size(); ++i)
-    cam0_points[i] = new_features[i].pt;
-
-  vector<cv::Point2f> cam1_points(0);
-  vector<unsigned char> inlier_markers(0);
-  stereoMatch(cam0_points, cam1_points, inlier_markers);
-
-  vector<cv::Point2f> cam0_inliers(0);
-  vector<cv::Point2f> cam1_inliers(0);
-  vector<float> response_inliers(0);
-  for (int i = 0; i < inlier_markers.size(); ++i) {
-    if (inlier_markers[i] == 0) continue;
-    cam0_inliers.push_back(cam0_points[i]);
-    cam1_inliers.push_back(cam1_points[i]);
-    response_inliers.push_back(new_features[i].response);
-  }
-
-  int matched_new_features = cam0_inliers.size();
-
-  if (matched_new_features < 5 &&
-      static_cast<double>(matched_new_features)/
-      static_cast<double>(detected_new_features) < 0.1)
-    ROS_WARN("Images at [%f] seems unsynced...",
-        cam0_curr_img_ptr->header.stamp.toSec());
-
-  // Group the features into grids
   GridFeatures grid_new_features;
-  for (int code = 0; code <
-      processor_config.grid_row*processor_config.grid_col; ++code)
-      grid_new_features[code] = vector<FeatureMetaData>(0);
+  if (processor_config.monocular) {
+    // Group the features into grids
+    for (int code = 0; code <
+        processor_config.grid_row*processor_config.grid_col; ++code)
+        grid_new_features[code] = vector<FeatureMetaData>(0);
 
-  for (int i = 0; i < cam0_inliers.size(); ++i) {
-    const cv::Point2f& cam0_point = cam0_inliers[i];
-    const cv::Point2f& cam1_point = cam1_inliers[i];
-    const float& response = response_inliers[i];
+    for (int i = 0; i < new_features.size(); ++i) {
+      const cv::Point2f& cam0_point = new_features[i].pt;
+      const float& response = new_features[i].response;
 
-    int row = static_cast<int>(cam0_point.y / grid_height);
-    int col = static_cast<int>(cam0_point.x / grid_width);
-    int code = row*processor_config.grid_col + col;
+      int row = static_cast<int>(cam0_point.y / grid_height);
+      int col = static_cast<int>(cam0_point.x / grid_width);
+      int code = row*processor_config.grid_col + col;
 
-    FeatureMetaData new_feature;
-    new_feature.response = response;
-    new_feature.cam0_point = cam0_point;
-    new_feature.cam1_point = cam1_point;
-    grid_new_features[code].push_back(new_feature);
+      FeatureMetaData new_feature;
+      new_feature.response = response;
+      new_feature.cam0_point = cam0_point;
+      grid_new_features[code].push_back(new_feature);
+    }
+  } else {
+    // Find the stereo matched points for the newly
+    // detected features.
+    vector<cv::Point2f> cam0_points(new_features.size());
+    for (int i = 0; i < new_features.size(); ++i)
+      cam0_points[i] = new_features[i].pt;
+
+    vector<cv::Point2f> cam1_points(0);
+    vector<unsigned char> inlier_markers(0);
+    stereoMatch(cam0_points, cam1_points, inlier_markers);
+
+    vector<cv::Point2f> cam0_inliers(0);
+    vector<cv::Point2f> cam1_inliers(0);
+    vector<float> response_inliers(0);
+    for (int i = 0; i < inlier_markers.size(); ++i) {
+      if (inlier_markers[i] == 0) continue;
+      cam0_inliers.push_back(cam0_points[i]);
+      cam1_inliers.push_back(cam1_points[i]);
+      response_inliers.push_back(new_features[i].response);
+    }
+
+    int matched_new_features = cam0_inliers.size();
+
+    if (matched_new_features < 5 &&
+        static_cast<double>(matched_new_features)/
+        static_cast<double>(detected_new_features) < 0.1)
+      ROS_WARN("Images at [%f] seems unsynced...",
+          cam0_curr_img_ptr->header.stamp.toSec());
+
+    // Group the features into grids
+    for (int code = 0; code <
+        processor_config.grid_row*processor_config.grid_col; ++code)
+        grid_new_features[code] = vector<FeatureMetaData>(0);
+
+    for (int i = 0; i < cam0_inliers.size(); ++i) {
+      const cv::Point2f& cam0_point = cam0_inliers[i];
+      const cv::Point2f& cam1_point = cam1_inliers[i];
+      const float& response = response_inliers[i];
+
+      int row = static_cast<int>(cam0_point.y / grid_height);
+      int col = static_cast<int>(cam0_point.x / grid_width);
+      int code = row*processor_config.grid_col + col;
+
+      FeatureMetaData new_feature;
+      new_feature.response = response;
+      new_feature.cam0_point = cam0_point;
+      new_feature.cam1_point = cam1_point;
+      grid_new_features[code].push_back(new_feature);
+    }
   }
 
   // Sort the new features in each grid based on its response.
@@ -1280,74 +1355,90 @@ void ImageProcessor::publish() {
   return;
 }
 
+inline cv::Scalar featureColor(int life_time) {
+  int WINDOW_SIZE=20;
+  double len = std::min(1.0, 1.0 * life_time / WINDOW_SIZE);
+  return cv::Scalar(255 * (1 - len), 0, 255 * len);
+}
+
 void ImageProcessor::drawFeaturesMono() {
-  // Colors for different features.
-  Scalar tracked(0, 255, 0);
-  Scalar new_feature(0, 255, 255);
+  if(debug_stereo_pub.getNumSubscribers() > 0) {
+    // Colors for different features.
+    Scalar tracked(0, 255, 0);
+    Scalar new_feature(0, 255, 255);
+    int grid_thickness = 2;
+    int circle_thickness = 2;
+    int line_thickness = 2;
+ 
 
-  static int grid_height =
-    cam0_curr_img_ptr->image.rows / processor_config.grid_row;
-  static int grid_width =
-    cam0_curr_img_ptr->image.cols / processor_config.grid_col;
+    static int grid_height =
+      cam0_curr_img_ptr->image.rows / processor_config.grid_row;
+    static int grid_width =
+      cam0_curr_img_ptr->image.cols / processor_config.grid_col;
 
-  // Create an output image.
-  int img_height = cam0_curr_img_ptr->image.rows;
-  int img_width = cam0_curr_img_ptr->image.cols;
-  Mat out_img(img_height, img_width, CV_8UC3);
-  cvtColor(cam0_curr_img_ptr->image, out_img, CV_GRAY2RGB);
+    // Create an output image.
+    int img_height = cam0_curr_img_ptr->image.rows;
+    int img_width = cam0_curr_img_ptr->image.cols;
+    Mat out_img(img_height, img_width, CV_8UC3);
+    cvtColor(cam0_curr_img_ptr->image, out_img, CV_GRAY2RGB);
 
-  // Draw grids on the image.
-  for (int i = 1; i < processor_config.grid_row; ++i) {
-    Point pt1(0, i*grid_height);
-    Point pt2(img_width, i*grid_height);
-    line(out_img, pt1, pt2, Scalar(255, 0, 0));
-  }
-  for (int i = 1; i < processor_config.grid_col; ++i) {
-    Point pt1(i*grid_width, 0);
-    Point pt2(i*grid_width, img_height);
-    line(out_img, pt1, pt2, Scalar(255, 0, 0));
-  }
-
-  // Collect features ids in the previous frame.
-  vector<FeatureIDType> prev_ids(0);
-  for (const auto& grid_features : *prev_features_ptr)
-    for (const auto& feature : grid_features.second)
-      prev_ids.push_back(feature.id);
-
-  // Collect feature points in the previous frame.
-  map<FeatureIDType, Point2f> prev_points;
-  for (const auto& grid_features : *prev_features_ptr)
-    for (const auto& feature : grid_features.second)
-      prev_points[feature.id] = feature.cam0_point;
-
-  // Collect feature points in the current frame.
-  map<FeatureIDType, Point2f> curr_points;
-  for (const auto& grid_features : *curr_features_ptr)
-    for (const auto& feature : grid_features.second)
-      curr_points[feature.id] = feature.cam0_point;
-
-  // Draw tracked features.
-  for (const auto& id : prev_ids) {
-    if (prev_points.find(id) != prev_points.end() &&
-        curr_points.find(id) != curr_points.end()) {
-      cv::Point2f prev_pt = prev_points[id];
-      cv::Point2f curr_pt = curr_points[id];
-      circle(out_img, curr_pt, 3, tracked);
-      line(out_img, prev_pt, curr_pt, tracked, 1);
-
-      prev_points.erase(id);
-      curr_points.erase(id);
+    // Draw grids on the image.
+    for (int i = 1; i < processor_config.grid_row; ++i) {
+      Point pt1(0, i*grid_height);
+      Point pt2(img_width, i*grid_height);
+      line(out_img, pt1, pt2, Scalar(255, 0, 0), grid_thickness);
     }
-  }
+    for (int i = 1; i < processor_config.grid_col; ++i) {
+      Point pt1(i*grid_width, 0);
+      Point pt2(i*grid_width, img_height);
+      line(out_img, pt1, pt2, Scalar(255, 0, 0), grid_thickness);
+    }
+    
+    // Collect features ids in the previous frame.
+    vector<FeatureIDType> prev_ids(0);
+    for (const auto& grid_features : *prev_features_ptr)
+      for (const auto& feature : grid_features.second)
+        prev_ids.push_back(feature.id);
 
-  // Draw new features.
-  for (const auto& new_curr_point : curr_points) {
-    cv::Point2f pt = new_curr_point.second;
-    circle(out_img, pt, 3, new_feature, -1);
-  }
+    // Collect feature points in the previous frame.
+    map<FeatureIDType, Point2f> prev_points;
+    for (const auto& grid_features : *prev_features_ptr)
+      for (const auto& feature : grid_features.second)
+        prev_points[feature.id] = feature.cam0_point;
 
-  imshow("Feature", out_img);
-  waitKey(5);
+    // Collect feature points in the current frame.
+    map<FeatureIDType, std::pair<Point2f, int>> curr_points;
+    for (const auto& grid_features : *curr_features_ptr)
+      for (const auto& feature : grid_features.second)
+        curr_points[feature.id] = std::make_pair(
+            feature.cam0_point, feature.lifetime);
+    
+    // Draw tracked features.
+    for (const auto& id : prev_ids) {
+      if (prev_points.find(id) != prev_points.end() &&
+          curr_points.find(id) != curr_points.end()) {
+        cv::Point2f prev_pt = prev_points[id];
+        cv::Point2f curr_pt = curr_points[id].first;
+        cv::Scalar tracked_color = featureColor(curr_points[id].second);
+        circle(out_img, curr_pt, 3, tracked_color, circle_thickness);
+        line(out_img, prev_pt, curr_pt, tracked_color, line_thickness);
+
+        prev_points.erase(id);
+        curr_points.erase(id);
+      }
+    }
+
+    // Draw new features.
+    for (const auto& new_curr_point : curr_points) {
+      cv::Point2f pt = new_curr_point.second.first;
+      circle(out_img, pt, 3, new_feature, -1);
+    }
+    cv_bridge::CvImage debug_image(cam0_curr_img_ptr->header, "bgr8", out_img);
+    debug_stereo_pub.publish(debug_image.toImageMsg());
+  }
+  // imshow("Feature", out_img);
+  // waitKey(5);
+  return;
 }
 
 void ImageProcessor::drawFeaturesStereo() {

@@ -52,6 +52,7 @@ private:
    *    feature detection and tracking.
    */
   struct ProcessorConfig {
+    bool monocular;
     int grid_row;
     int grid_col;
     int grid_min_feature_num;
