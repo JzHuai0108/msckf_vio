@@ -5,18 +5,11 @@
  * All rights reserved.
  */
 
-#include <iostream>
-#include <algorithm>
-#include <set>
+#include <msckf_vio/feature_tracker.h>
+
 #include <Eigen/Dense>
 
-#include <sensor_msgs/image_encodings.h>
 #include <random_numbers/random_numbers.h>
-
-#include <msckf_vio/CameraMeasurement.h>
-#include <msckf_vio/TrackingInfo.h>
-#include <msckf_vio/image_processor.h>
-#include <msckf_vio/utils.h>
 
 using namespace std;
 using namespace cv;
@@ -465,12 +458,12 @@ void FeatureTracker::trackFeatures() {
   for (const auto& item : *curr_features_ptr)
     curr_feature_num += item.second.size();
 
-  ROS_INFO_THROTTLE(0.5,
-      "\033[0;32m candidates: %d; track: %d; match: %d; ransac: %d/%d=%f\033[0m",
-      before_tracking, after_tracking, after_matching,
-      curr_feature_num, prev_feature_num,
-      static_cast<double>(curr_feature_num)/
-      (static_cast<double>(prev_feature_num)+1e-5));
+  // ROS_INFO_THROTTLE(0.5,
+  //     "\033[0;32m candidates: %d; track: %d; match: %d; ransac: %d/%d=%f\033[0m",
+  //     before_tracking, after_tracking, after_matching,
+  //     curr_feature_num, prev_feature_num,
+  //     static_cast<double>(curr_feature_num)/
+  //     (static_cast<double>(prev_feature_num)+1e-5));
   //printf(
   //    "\033[0;32m candidates: %d; raw track: %d; stereo match: %d; ransac: %d/%d=%f\033[0m\n",
   //    before_tracking, after_tracking, after_matching,
@@ -667,9 +660,10 @@ void FeatureTracker::addNewFeatures() {
 
     if (matched_new_features < 5 &&
         static_cast<double>(matched_new_features)/
-        static_cast<double>(detected_new_features) < 0.1)
-      ROS_WARN("Images at [%f] seems unsynced...",
-          cam0_curr_img_header_.stamp.toSec());
+        static_cast<double>(detected_new_features) < 0.1) {
+      std::cerr << "Images at [" << cam0_curr_img_header_.stamp.toSec()
+          << "] seems unsynced.\n";
+    }
 
     // Group the features into grids
     for (int code = 0; code <
@@ -770,8 +764,8 @@ void FeatureTracker::undistortPoints(
     cv::fisheye::undistortPoints(pts_in, pts_out, K, distortion_coeffs,
                                  rectification_matrix, K_new);
   } else {
-    ROS_WARN_ONCE("The model %s is unrecognized, use radtan instead...",
-                  distortion_model.c_str());
+    std::cerr << "The model " << distortion_model.c_str()
+        << " is unrecognized, use radtan instead.\n";
     cv::undistortPoints(pts_in, pts_out, K, distortion_coeffs,
                         rectification_matrix, K_new);
   }
@@ -798,8 +792,8 @@ vector<cv::Point2f> FeatureTracker::distortPoints(
   } else if (distortion_model == "equidistant") {
     cv::fisheye::distortPoints(pts_in, pts_out, K, distortion_coeffs);
   } else {
-    ROS_WARN_ONCE("The model %s is unrecognized, using radtan instead...",
-                  distortion_model.c_str());
+    std::cerr << "The model " << distortion_model.c_str() 
+        << " is unrecognized, using radtan instead.\n";
     vector<cv::Point3f> homogenous_pts;
     cv::convertPointsToHomogeneous(pts_in, homogenous_pts);
     cv::projectPoints(homogenous_pts, cv::Vec3d::zeros(), cv::Vec3d::zeros(), K,
@@ -889,9 +883,12 @@ void FeatureTracker::twoPointRansac(
     vector<int>& inlier_markers) {
 
   // Check the size of input point size.
-  if (pts1.size() != pts2.size())
-    ROS_ERROR("Sets of different size (%lu and %lu) are used...",
-        pts1.size(), pts2.size());
+  if (pts1.size() != pts2.size()) {
+    std::stringstream ss;
+    ss << "Sets of different size (" << pts1.size() 
+        << " and " << pts2.size() << ") are used.\n";
+    std::cerr << ss.str();
+  }
 
   double norm_pixel_unit = 2.0 / (intrinsics[0]+intrinsics[1]);
   int iter_num = static_cast<int>(

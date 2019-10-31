@@ -4,23 +4,14 @@
  * Copyright (C) 2017 The Trustees of the University of Pennsylvania
  * All rights reserved.
  */
-
-#include <iostream>
-#include <algorithm>
-#include <set>
-#include <Eigen/Dense>
-
-#include <sensor_msgs/image_encodings.h>
-#include <random_numbers/random_numbers.h>
+#include <msckf_vio/image_processor.h>
 
 #include <msckf_vio/CameraMeasurement.h>
 #include <msckf_vio/TrackingInfo.h>
-#include <msckf_vio/image_processor.h>
 #include <msckf_vio/utils.h>
 
 using namespace std;
 using namespace cv;
-using namespace Eigen;
 
 namespace msckf_vio {
 ImageProcessor::ImageProcessor(ros::NodeHandle& n) :

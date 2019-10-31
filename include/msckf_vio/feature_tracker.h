@@ -10,7 +10,7 @@
 
 #include <vector>
 #include <map>
-// #include <boost/shared_ptr.hpp>
+
 #include <opencv2/opencv.hpp>
 #include <opencv2/video.hpp>
 
@@ -324,8 +324,8 @@ private:
       const std::vector<unsigned char>& markers,
       std::vector<T>& refined_vec) {
     if (raw_vec.size() != markers.size()) {
-      ROS_WARN("The input size of raw_vec(%lu) and markers(%lu) does not match...",
-          raw_vec.size(), markers.size());
+      std::cerr << "The input size of raw_vec(" << raw_vec.size()
+          << ") and markers(" << markers.size() << ") does not match.\n";
     }
     for (int i = 0; i < markers.size(); ++i) {
       if (markers[i] == 0) continue;
