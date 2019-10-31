@@ -8,8 +8,9 @@
 #ifndef MSCKF_VIO_FEATURE_TRACKER_H
 #define MSCKF_VIO_FEATURE_TRACKER_H
 
-#include <vector>
 #include <map>
+#include <memory>
+#include <vector>
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/video.hpp>

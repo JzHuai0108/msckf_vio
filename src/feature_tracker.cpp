@@ -7,9 +7,10 @@
 
 #include <msckf_vio/feature_tracker.h>
 
-#include <Eigen/Dense>
+#include <random>
+// #include <random_numbers/random_numbers.h>
 
-#include <random_numbers/random_numbers.h>
+#include <Eigen/Dense>
 
 using namespace std;
 using namespace cv;
@@ -991,16 +992,23 @@ void FeatureTracker::twoPointRansac(
 
   vector<int> best_inlier_set;
   double best_error = 1e10;
-  random_numbers::RandomNumberGenerator random_gen;
-
+  // random_numbers::RandomNumberGenerator random_gen;
+  std::default_random_engine generator;
+  
   for (int iter_idx = 0; iter_idx < iter_num; ++iter_idx) {
     // Randomly select two point pairs.
     // Although this is a weird way of selecting two pairs, but it
     // is able to efficiently avoid selecting repetitive pairs.
-    int select_idx1 = random_gen.uniformInteger(
-        0, raw_inlier_idx.size()-1);
-    int select_idx_diff = random_gen.uniformInteger(
-        1, raw_inlier_idx.size()-1);
+    // int select_idx1 = random_gen.uniformInteger(
+    //     0, raw_inlier_idx.size()-1);
+    // int select_idx_diff = random_gen.uniformInteger(
+    //     1, raw_inlier_idx.size()-1);
+    
+    std::uniform_int_distribution<int> distribution(0, raw_inlier_idx.size()-1);
+    int select_idx1 = distribution(generator);
+    std::uniform_int_distribution<int> distribution_diff(1, raw_inlier_idx.size()-1);
+    int select_idx_diff = distribution_diff(generator);
+
     int select_idx2 = select_idx1+select_idx_diff<raw_inlier_idx.size() ?
       select_idx1+select_idx_diff :
       select_idx1+select_idx_diff-raw_inlier_idx.size();
