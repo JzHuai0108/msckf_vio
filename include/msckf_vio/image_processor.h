@@ -10,7 +10,7 @@
 
 #include <vector>
 #include <map>
-#include <boost/shared_ptr.hpp>
+// #include <boost/shared_ptr.hpp>
 #include <opencv2/opencv.hpp>
 #include <opencv2/video.hpp>
 
@@ -42,8 +42,8 @@ public:
   // Initialize the object.
   bool initialize();
 
-  typedef boost::shared_ptr<ImageProcessor> Ptr;
-  typedef boost::shared_ptr<const ImageProcessor> ConstPtr;
+  typedef std::shared_ptr<ImageProcessor> Ptr;
+  typedef std::shared_ptr<const ImageProcessor> ConstPtr;
 
 private:
 
@@ -361,8 +361,8 @@ private:
   std::vector<cv::Mat> curr_cam1_pyramid_;
 
   // Features in the previous and current image.
-  boost::shared_ptr<GridFeatures> prev_features_ptr;
-  boost::shared_ptr<GridFeatures> curr_features_ptr;
+  std::shared_ptr<GridFeatures> prev_features_ptr;
+  std::shared_ptr<GridFeatures> curr_features_ptr;
 
   // Number of features after each outlier removal step.
   int before_tracking;
