@@ -15,7 +15,14 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/video.hpp>
 
+#if 1
 #include <sensor_msgs/Imu.h>
+typedef std_msgs::Header MessageHeader;
+typedef sensor_msgs::Imu ImuMessage;
+typedef sensor_msgs::ImuConstPtr ImuMessageConstPtr;
+#else
+// put substitutes here
+#endif
 
 namespace msckf_vio {
 
@@ -51,12 +58,12 @@ public:
   void stereoCallback(
       const cv::Mat& cam0_img,
       const cv::Mat& cam1_img,
-      const std_msgs::Header& cam0_header);
+      const MessageHeader& cam0_header);
 
   void prepareForNextFrame();
   
   void imuCallback(
-    const sensor_msgs::ImuConstPtr& msg);
+    const ImuMessageConstPtr& msg);
 
   void undistortPoints(
       const std::vector<cv::Point2f>& pts_in,
@@ -151,11 +158,11 @@ public:
   cv::Mat cam0_curr_img_;
   cv::Mat cam1_curr_img_;
 
-  std_msgs::Header cam0_prev_img_header_;
-  std_msgs::Header cam0_curr_img_header_;
+  MessageHeader cam0_prev_img_header_;
+  MessageHeader cam0_curr_img_header_;
 
   // IMU message buffer.
-  std::vector<sensor_msgs::Imu> imu_msg_buffer;
+  std::vector<ImuMessage> imu_msg_buffer;
 
   // Number of features after each outlier removal step.
   int before_tracking;

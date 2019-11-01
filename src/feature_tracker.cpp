@@ -65,7 +65,7 @@ bool FeatureTracker::initialize() {
 void FeatureTracker::stereoCallback(
     const cv::Mat& cam0_img,
     const cv::Mat& cam1_img,
-    const std_msgs::Header& cam0_header) {
+    const MessageHeader& cam0_header) {
   //cout << "==================================" << endl;
 
   // Get the current image.
@@ -132,7 +132,7 @@ void FeatureTracker::prepareForNextFrame() {
 }
 
 void FeatureTracker::imuCallback(
-    const sensor_msgs::ImuConstPtr& msg) {
+    const ImuMessageConstPtr& msg) {
   // Wait for the first image to be set.
   if (is_first_img) return;
   imu_msg_buffer.push_back(*msg);
