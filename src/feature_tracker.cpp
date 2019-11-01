@@ -17,6 +17,32 @@ using namespace cv;
 using namespace Eigen;
 
 namespace msckf_vio {
+FeatureTracker::ProcessorConfig::ProcessorConfig() :
+  monocular(false), grid_row(4), grid_col(4),
+  grid_min_feature_num(4), grid_max_feature_num(6),
+  pyramid_levels(3), patch_size(31),
+  fast_threshold(20), max_iteration(30),
+  track_precision(0.01), ransac_threshold(3),
+  stereo_threshold(3) {
+}
+
+std::string FeatureTracker::ProcessorConfig::print() const {
+  std::stringstream ss;
+  ss << "monocular: " << monocular << "\n";
+  ss << "grid_row: " << grid_row << "\n";
+  ss << "grid_col: " << grid_col << "\n";
+  ss << "grid_min_feature_num: " << grid_min_feature_num << "\n";
+  ss << "grid_max_feature_num: " << grid_max_feature_num << "\n";
+  ss << "pyramid_levels: " << pyramid_levels << "\n";
+  ss << "patch_size: " << patch_size << "\n";
+  ss << "fast_threshold: " << fast_threshold << "\n";
+  ss << "max_iteration: " << max_iteration << "\n";
+  ss << "track_precision: " << track_precision << "\n";
+  ss << "ransac_threshold: " << ransac_threshold << "\n";
+  ss << "stereo_threshold: " << stereo_threshold << "\n";
+  return ss.str();
+}
+
 FeatureTracker::FeatureTracker() :
   is_first_img(true),
   prev_features_ptr(new GridFeatures()),

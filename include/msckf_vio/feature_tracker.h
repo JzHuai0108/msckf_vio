@@ -121,6 +121,9 @@ public:
     double track_precision;
     double ransac_threshold;
     double stereo_threshold;
+
+    ProcessorConfig();
+    std::string print() const;
   };
 
   ProcessorConfig processor_config;
