@@ -247,31 +247,14 @@ void ImageProcessor::drawFeatures() {
 }
 
 void ImageProcessor::publish() {
-  vector<feature_tracker::FeatureIDType> curr_ids(0);
-  vector<Point2f> curr_cam0_points(0);
-  vector<Point2f> curr_cam1_points(0);
-
-  for (const auto& grid_features : (*feature_tracker_.getCurrFeaturesPtr())) {
-    for (const auto& feature : grid_features.second) {
-      curr_ids.push_back(feature.id);
-      curr_cam0_points.push_back(feature.cam0_point);
-      curr_cam1_points.push_back(feature.cam1_point);
-    }
-  }
+  vector<feature_tracker::FeatureIDType> curr_ids(0);  
+  feature_tracker_.getCurrentFeatureIds(&curr_ids);
 
   vector<Point2f> curr_cam0_points_undistorted(0);
   vector<Point2f> curr_cam1_points_undistorted(0);
-
-  feature_tracker_.undistortPoints(
-      curr_cam0_points, feature_tracker_.cam0_intrinsics, 
-      feature_tracker_.cam0_distortion_model,
-      feature_tracker_.cam0_distortion_coeffs, 
-      curr_cam0_points_undistorted);
-  feature_tracker_.undistortPoints(
-      curr_cam1_points, feature_tracker_.cam1_intrinsics, 
-      feature_tracker_.cam1_distortion_model,
-      feature_tracker_.cam1_distortion_coeffs, 
-      curr_cam1_points_undistorted);
+  feature_tracker_.getCurrentFeaturesUndistorted(
+      &curr_cam0_points_undistorted, 
+      &curr_cam1_points_undistorted);
 
   // Publish features.
   CameraMeasurementPtr feature_msg_ptr(new CameraMeasurement);
@@ -282,8 +265,12 @@ void ImageProcessor::publish() {
     feature_msg_ptr->features[i].id = curr_ids[i];
     feature_msg_ptr->features[i].u0 = curr_cam0_points_undistorted[i].x;
     feature_msg_ptr->features[i].v0 = curr_cam0_points_undistorted[i].y;
-    feature_msg_ptr->features[i].u1 = curr_cam1_points_undistorted[i].x;
-    feature_msg_ptr->features[i].v1 = curr_cam1_points_undistorted[i].y;
+  }
+  if (curr_cam1_points_undistorted.size()) {
+    for (int i = 0; i < curr_ids.size(); ++i) {
+        feature_msg_ptr->features[i].u1 = curr_cam1_points_undistorted[i].x;
+        feature_msg_ptr->features[i].v1 = curr_cam1_points_undistorted[i].y;
+    }
   }
 
   feature_pub.publish(feature_msg_ptr);
