@@ -86,7 +86,7 @@ private:
    */
   void drawFeatures();
 
-  FeatureTracker feature_tracker_;
+  feature_tracker::FeatureTracker feature_tracker_;
 
   // Ros node handle
   ros::NodeHandle nh;

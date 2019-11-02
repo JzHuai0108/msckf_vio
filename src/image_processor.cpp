@@ -247,7 +247,7 @@ void ImageProcessor::drawFeatures() {
 }
 
 void ImageProcessor::publish() {
-  vector<FeatureIDType> curr_ids(0);
+  vector<feature_tracker::FeatureIDType> curr_ids(0);
   vector<Point2f> curr_cam0_points(0);
   vector<Point2f> curr_cam1_points(0);
 

@@ -20,11 +20,30 @@
 typedef std_msgs::Header MessageHeader;
 typedef sensor_msgs::Imu ImuMessage;
 typedef sensor_msgs::ImuConstPtr ImuMessageConstPtr;
+typedef ros::Time TimeSource;
 #else
-// put substitutes here
+#include <okvis/Time.hpp>
+namespace feature_tracker {
+struct MessageHeader {
+  okvis::Time stamp;
+};
+
+struct ImuMessage {
+  MessageHeader header;
+  struct Vector3 {
+    double x;
+    double y;
+    double z;
+  } angular_velocity;
+};
+
+typedef std::shared_ptr<ImuMessage const> ImuMessageConstPtr;
+
+typedef okvis::Time TimeSource;
+} // namespace feature_tracker
 #endif
 
-namespace msckf_vio {
+namespace feature_tracker {
 
 /*
  * @brief ImageProcessor Detects and tracks features
@@ -47,7 +66,7 @@ public:
   ~FeatureTracker();
 
   // Initialize the object.
-  bool initialize();
+  void initialize();
 
   /*
    * @brief stereoCallback
@@ -338,7 +357,7 @@ private:
       std::cerr << "The input size of raw_vec(" << raw_vec.size()
           << ") and markers(" << markers.size() << ") does not match.\n";
     }
-    for (int i = 0; i < markers.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(markers.size()); ++i) {
       if (markers[i] == 0) continue;
       refined_vec.push_back(raw_vec[i]);
     }
@@ -368,6 +387,6 @@ private:
   void updateFeatureLifetime();
   void featureLifetimeStatistics();
 };
-} // end namespace msckf_vio
+} // end namespace feature_tracker
 
 #endif

@@ -16,7 +16,7 @@ using namespace std;
 using namespace cv;
 using namespace Eigen;
 
-namespace msckf_vio {
+namespace feature_tracker {
 FeatureTracker::ProcessorConfig::ProcessorConfig() :
   monocular(false), grid_row(4), grid_col(4),
   grid_min_feature_num(4), grid_max_feature_num(6),
@@ -56,7 +56,7 @@ FeatureTracker::~FeatureTracker() {
   return;
 }
 
-bool FeatureTracker::initialize() {
+void FeatureTracker::initialize() {
   // Create feature detector.
   detector_ptr = FastFeatureDetector::create(
       processor_config.fast_threshold);
@@ -78,41 +78,41 @@ void FeatureTracker::stereoCallback(
 
   // Detect features in the first frame.
   if (is_first_img) {
-    ros::Time start_time = ros::Time::now();
+    TimeSource start_time = TimeSource::now();
     initializeFirstFrame();
     //ROS_INFO("Detection time: %f",
-    //    (ros::Time::now()-start_time).toSec());
+    //    (TimeSource::now()-start_time).toSec());
     is_first_img = false;
 
   
   } else {
     // Track the feature in the previous image.
-    ros::Time start_time = ros::Time::now();
+    TimeSource start_time = TimeSource::now();
     trackFeatures();
     //ROS_INFO("Tracking time: %f",
-    //    (ros::Time::now()-start_time).toSec());
+    //    (TimeSource::now()-start_time).toSec());
 
     // Add new features into the current image.
-    start_time = ros::Time::now();
+    start_time = TimeSource::now();
     addNewFeatures();
     //ROS_INFO("Addition time: %f",
-    //    (ros::Time::now()-start_time).toSec());
+    //    (TimeSource::now()-start_time).toSec());
 
     // Add new features into the current image.
-    start_time = ros::Time::now();
+    start_time = TimeSource::now();
     pruneGridFeatures();
     //ROS_INFO("Prune grid features: %f",
-    //    (ros::Time::now()-start_time).toSec());
+    //    (TimeSource::now()-start_time).toSec());
 
   }
 
   //ROS_INFO("Draw features: %f",
-  //    (ros::Time::now()-start_time_draw).toSec());
+  //    (TimeSource::now()-start_time_draw).toSec());
 
-  //ros::Time start_time = ros::Time::now();
+  //TimeSource start_time = TimeSource::now();
   // updateFeatureLifetime();
   //ROS_INFO("Statistics: %f",
-  //    (ros::Time::now()-start_time).toSec());
+  //    (TimeSource::now()-start_time).toSec());
 }
 
 void FeatureTracker::prepareForNextFrame() {
@@ -172,7 +172,7 @@ void FeatureTracker::initializeFirstFrame() {
     for (int code = 0; code <
         processor_config.grid_row*processor_config.grid_col; ++code)
         grid_new_features[code] = vector<FeatureMetaData>(0);
-    for (int i = 0; i < new_features.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(new_features.size()); ++i) {
       const cv::Point2f& cam0_point = new_features[i].pt;
       const float& response = new_features[i].response;
 
@@ -189,7 +189,7 @@ void FeatureTracker::initializeFirstFrame() {
     // Find the stereo matched points for the newly
     // detected features.
     vector<cv::Point2f> cam0_points(new_features.size());
-    for (int i = 0; i < new_features.size(); ++i)
+    for (int i = 0; i < static_cast<int>(new_features.size()); ++i)
       cam0_points[i] = new_features[i].pt;
     vector<cv::Point2f> cam1_points(0);
     vector<unsigned char> inlier_markers(0);
@@ -198,7 +198,7 @@ void FeatureTracker::initializeFirstFrame() {
     vector<cv::Point2f> cam0_inliers(0);
     vector<cv::Point2f> cam1_inliers(0);
     vector<float> response_inliers(0);
-    for (int i = 0; i < inlier_markers.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(inlier_markers.size()); ++i) {
       if (inlier_markers[i] == 0) continue;
       cam0_inliers.push_back(cam0_points[i]);
       cam1_inliers.push_back(cam1_points[i]);
@@ -210,7 +210,7 @@ void FeatureTracker::initializeFirstFrame() {
         processor_config.grid_row*processor_config.grid_col; ++code)
         grid_new_features[code] = vector<FeatureMetaData>(0);
 
-    for (int i = 0; i < cam0_inliers.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(cam0_inliers.size()); ++i) {
       const cv::Point2f& cam0_point = cam0_inliers[i];
       const cv::Point2f& cam1_point = cam1_inliers[i];
       const float& response = response_inliers[i];
@@ -239,7 +239,7 @@ void FeatureTracker::initializeFirstFrame() {
     vector<FeatureMetaData>& new_features_this_grid = grid_new_features[code];
 
     for (int k = 0; k < processor_config.grid_min_feature_num &&
-        k < new_features_this_grid.size(); ++k) {
+        k < static_cast<int>(new_features_this_grid.size()); ++k) {
       features_this_grid.push_back(new_features_this_grid[k]);
       features_this_grid.back().id = next_feature_id++;
       features_this_grid.back().lifetime = 1;
@@ -269,7 +269,7 @@ void FeatureTracker::predictFeatureTracking(
       0.0, 0.0, 1.0);
   cv::Matx33f H = K * R_p_c * K.inv();
 
-  for (int i = 0; i < input_pts.size(); ++i) {
+  for (int i = 0; i < static_cast<int>(input_pts.size()); ++i) {
     cv::Vec3f p1(input_pts[i].x, input_pts[i].y, 1.0f);
     cv::Vec3f p2 = H * p1;
     compensated_pts[i].x = p2[0] / p2[2];
@@ -334,7 +334,7 @@ void FeatureTracker::trackFeatures() {
 
   // Mark those tracked points out of the image region
   // as untracked.
-  for (int i = 0; i < curr_cam0_points.size(); ++i) {
+  for (int i = 0; i < static_cast<int>(curr_cam0_points.size()); ++i) {
     if (track_inliers[i] == 0) continue;
     if (curr_cam0_points[i].y < 0 ||
         curr_cam0_points[i].y > cam0_curr_img_.rows-1 ||
@@ -378,7 +378,7 @@ void FeatureTracker::trackFeatures() {
     // Number of features after ransac.
     after_ransac = 0;
 
-    for (int i = 0; i < cam0_ransac_inliers.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(cam0_ransac_inliers.size()); ++i) {
       if (cam0_ransac_inliers[i] == 0) continue;
       int row = static_cast<int>(
           curr_tracked_cam0_points[i].y / grid_height);
@@ -456,7 +456,7 @@ void FeatureTracker::trackFeatures() {
     // Number of features after ransac.
     after_ransac = 0;
 
-    for (int i = 0; i < cam0_ransac_inliers.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(cam0_ransac_inliers.size()); ++i) {
       if (cam0_ransac_inliers[i] == 0 ||
           cam1_ransac_inliers[i] == 0) continue;
       int row = static_cast<int>(
@@ -533,7 +533,7 @@ void FeatureTracker::stereoMatch(
 
   // Mark those tracked points out of the image region
   // as untracked.
-  for (int i = 0; i < cam1_points.size(); ++i) {
+  for (int i = 0; i < static_cast<int>(cam1_points.size()); ++i) {
     if (inlier_markers[i] == 0) continue;
     if (cam1_points[i].y < 0 ||
         cam1_points[i].y > cam1_curr_img_.rows-1 ||
@@ -568,7 +568,7 @@ void FeatureTracker::stereoMatch(
       cam0_intrinsics[0]+cam0_intrinsics[1]+
       cam1_intrinsics[0]+cam1_intrinsics[1]);
 
-  for (int i = 0; i < cam0_points_undistorted.size(); ++i) {
+  for (int i = 0; i < static_cast<int>(cam0_points_undistorted.size()); ++i) {
     if (inlier_markers[i] == 0) continue;
     cv::Vec3d pt0(cam0_points_undistorted[i].x,
         cam0_points_undistorted[i].y, 1.0);
@@ -632,7 +632,7 @@ void FeatureTracker::addNewFeatures() {
 
   new_features.clear();
   for (auto& item : new_feature_sieve) {
-    if (item.size() > processor_config.grid_max_feature_num) {
+    if (static_cast<int>(item.size()) > processor_config.grid_max_feature_num) {
       std::sort(item.begin(), item.end(),
           &FeatureTracker::keyPointCompareByResponse);
       item.erase(
@@ -649,7 +649,7 @@ void FeatureTracker::addNewFeatures() {
         processor_config.grid_row*processor_config.grid_col; ++code)
         grid_new_features[code] = vector<FeatureMetaData>(0);
 
-    for (int i = 0; i < new_features.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(new_features.size()); ++i) {
       const cv::Point2f& cam0_point = new_features[i].pt;
       const float& response = new_features[i].response;
 
@@ -666,7 +666,7 @@ void FeatureTracker::addNewFeatures() {
     // Find the stereo matched points for the newly
     // detected features.
     vector<cv::Point2f> cam0_points(new_features.size());
-    for (int i = 0; i < new_features.size(); ++i)
+    for (int i = 0; i < static_cast<int>(new_features.size()); ++i)
       cam0_points[i] = new_features[i].pt;
 
     vector<cv::Point2f> cam1_points(0);
@@ -676,7 +676,7 @@ void FeatureTracker::addNewFeatures() {
     vector<cv::Point2f> cam0_inliers(0);
     vector<cv::Point2f> cam1_inliers(0);
     vector<float> response_inliers(0);
-    for (int i = 0; i < inlier_markers.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(inlier_markers.size()); ++i) {
       if (inlier_markers[i] == 0) continue;
       cam0_inliers.push_back(cam0_points[i]);
       cam1_inliers.push_back(cam1_points[i]);
@@ -697,7 +697,7 @@ void FeatureTracker::addNewFeatures() {
         processor_config.grid_row*processor_config.grid_col; ++code)
         grid_new_features[code] = vector<FeatureMetaData>(0);
 
-    for (int i = 0; i < cam0_inliers.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(cam0_inliers.size()); ++i) {
       const cv::Point2f& cam0_point = cam0_inliers[i];
       const cv::Point2f& cam1_point = cam1_inliers[i];
       const float& response = response_inliers[i];
@@ -726,13 +726,13 @@ void FeatureTracker::addNewFeatures() {
     vector<FeatureMetaData>& features_this_grid = (*curr_features_ptr)[code];
     vector<FeatureMetaData>& new_features_this_grid = grid_new_features[code];
 
-    if (features_this_grid.size() >=
+    if (static_cast<int>(features_this_grid.size()) >=
         processor_config.grid_min_feature_num) continue;
 
     int vacancy_num = processor_config.grid_min_feature_num -
       features_this_grid.size();
     for (int k = 0;
-        k < vacancy_num && k < new_features_this_grid.size(); ++k) {
+        k < vacancy_num && k < static_cast<int>(new_features_this_grid.size()); ++k) {
       features_this_grid.push_back(new_features_this_grid[k]);
       features_this_grid.back().id = next_feature_id++;
       features_this_grid.back().lifetime = 1;
@@ -752,7 +752,7 @@ void FeatureTracker::pruneGridFeatures() {
     auto& grid_features = item.second;
     // Continue if the number of features in this grid does
     // not exceed the upper bound.
-    if (grid_features.size() <=
+    if (static_cast<int>(grid_features.size()) <=
         processor_config.grid_max_feature_num) continue;
     std::sort(grid_features.begin(), grid_features.end(),
         &FeatureTracker::featureCompareByLifetime);
@@ -884,7 +884,7 @@ void FeatureTracker::rescalePoints(
 
   scaling_factor = 0.0f;
 
-  for (int i = 0; i < pts1.size(); ++i) {
+  for (int i = 0; i < static_cast<int>(pts1.size()); ++i) {
     scaling_factor += sqrt(pts1[i].dot(pts1[i]));
     scaling_factor += sqrt(pts2[i].dot(pts2[i]));
   }
@@ -892,7 +892,7 @@ void FeatureTracker::rescalePoints(
   scaling_factor = (pts1.size()+pts2.size()) /
     scaling_factor * sqrt(2.0f);
 
-  for (int i = 0; i < pts1.size(); ++i) {
+  for (int i = 0; i < static_cast<int>(pts1.size()); ++i) {
     pts1[i] *= scaling_factor;
     pts2[i] *= scaling_factor;
   }
@@ -953,7 +953,7 @@ void FeatureTracker::twoPointRansac(
   // Compute the difference between previous and current points,
   // which will be used frequently later.
   vector<Point2d> pts_diff(pts1_undistorted.size());
-  for (int i = 0; i < pts1_undistorted.size(); ++i)
+  for (int i = 0; i < static_cast<int>(pts1_undistorted.size()); ++i)
     pts_diff[i] = pts1_undistorted[i] - pts2_undistorted[i];
 
   // Mark the point pairs with large difference directly.
@@ -961,7 +961,7 @@ void FeatureTracker::twoPointRansac(
   // are computed.
   double mean_pt_distance = 0.0;
   int raw_inlier_cntr = 0;
-  for (int i = 0; i < pts_diff.size(); ++i) {
+  for (int i = 0; i < static_cast<int>(pts_diff.size()); ++i) {
     double distance = sqrt(pts_diff[i].dot(pts_diff[i]));
     // 25 pixel distance is a pretty large tolerance for normal motion.
     // However, to be used with aggressive motion, this tolerance should
@@ -991,7 +991,7 @@ void FeatureTracker::twoPointRansac(
   //if (mean_pt_distance < inlier_error*norm_pixel_unit) {
   if (mean_pt_distance < norm_pixel_unit) {
     //ROS_WARN_THROTTLE(1.0, "Degenerated motion...");
-    for (int i = 0; i < pts_diff.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(pts_diff.size()); ++i) {
       if (inlier_markers[i] == 0) continue;
       if (sqrt(pts_diff[i].dot(pts_diff[i])) >
           inlier_error*norm_pixel_unit)
@@ -1003,7 +1003,7 @@ void FeatureTracker::twoPointRansac(
   // In the case of general motion, the RANSAC model can be applied.
   // The three column corresponds to tx, ty, and tz respectively.
   MatrixXd coeff_t(pts_diff.size(), 3);
-  for (int i = 0; i < pts_diff.size(); ++i) {
+  for (int i = 0; i < static_cast<int>(pts_diff.size()); ++i) {
     coeff_t(i, 0) = pts_diff[i].y;
     coeff_t(i, 1) = -pts_diff[i].x;
     coeff_t(i, 2) = pts1_undistorted[i].x*pts2_undistorted[i].y -
@@ -1011,7 +1011,7 @@ void FeatureTracker::twoPointRansac(
   }
 
   vector<int> raw_inlier_idx;
-  for (int i = 0; i < inlier_markers.size(); ++i) {
+  for (int i = 0; i < static_cast<int>(inlier_markers.size()); ++i) {
     if (inlier_markers[i] != 0)
       raw_inlier_idx.push_back(i);
   }
@@ -1035,7 +1035,7 @@ void FeatureTracker::twoPointRansac(
     std::uniform_int_distribution<int> distribution_diff(1, raw_inlier_idx.size()-1);
     int select_idx_diff = distribution_diff(generator);
 
-    int select_idx2 = select_idx1+select_idx_diff<raw_inlier_idx.size() ?
+    int select_idx2 = select_idx1+select_idx_diff < static_cast<int>(raw_inlier_idx.size()) ?
       select_idx1+select_idx_diff :
       select_idx1+select_idx_diff-raw_inlier_idx.size();
 
@@ -1096,7 +1096,7 @@ void FeatureTracker::twoPointRansac(
     VectorXd coeff_tx_better(inlier_set.size());
     VectorXd coeff_ty_better(inlier_set.size());
     VectorXd coeff_tz_better(inlier_set.size());
-    for (int i = 0; i < inlier_set.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(inlier_set.size()); ++i) {
       coeff_tx_better(i) = coeff_t(inlier_set[i], 0);
       coeff_ty_better(i) = coeff_t(inlier_set[i], 1);
       coeff_tz_better(i) = coeff_t(inlier_set[i], 2);
@@ -1364,5 +1364,4 @@ void FeatureTracker::featureLifetimeStatistics() {
 
   return;
 }
-
-} // end namespace msckf_vio
+} // end namespace feature_tracker
